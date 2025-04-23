@@ -5,13 +5,14 @@ import sqlite3
 
 def calculate_fingerprint(file_path):
     """
-    Calculates the audio fingerprint of a given audio file using fpcalc.
+    Attempts to calculate the audio fingerprint of a given audio file using fpcalc,
+    ignoring any errors.
 
     Args:
         file_path (str): The path to the audio file.
 
     Returns:
-        str: The audio fingerprint string, or None if an error occurs.
+        str: The audio fingerprint string if found in the output, or None otherwise.
     """
     command = [
         "fpcalc",
@@ -20,20 +21,17 @@ def calculate_fingerprint(file_path):
     ]
     try:
         # Execute the fpcalc command and capture the output
-        result = subprocess.run(command, check=True, capture_output=True, text=True)
+        result = subprocess.run(command, capture_output=True, text=True)
         # The fingerprint is on the last line of the output, after "FINGERPRINT="
         for line in result.stdout.splitlines():
             if "FINGERPRINT=" in line:
                 return line.split("=")[1].strip()
         return None  # Return None if no fingerprint found
-    except subprocess.CalledProcessError as e:
-        print(f"Error calculating fingerprint for {file_path}: {e}")
-        print(f"fpcalc output (stderr): {e.stderr}")
-        return None
     except FileNotFoundError:
-        print("Error: fpcalc command not found.  Please ensure fpcalc is installed and in your system's PATH.")
+        print("Error: fpcalc command not found. Please ensure fpcalc is installed and in your system's PATH.")
         sys.exit(1)
-
+    # Removed subprocess.CalledProcessError block to ignore errors
+    return None # Return None if any other error occurs during subprocess execution
 
 def calculate_percentage_match(hash1, hash2):
     """
@@ -136,7 +134,7 @@ def insert_song_data(db_path, song_title, artist_name, album_title, release_date
 
         cursor.execute('''
             INSERT INTO songs (song_title, artist_name, album_title, release_date, duration, isrc, mbid)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
         ''', (song_title, artist_name, album_title, release_date, duration, isrc, mbid))
 
         conn.commit()
@@ -229,38 +227,52 @@ def process_audio_file(db_path, input_file, output_folder, sample_duration=10):
         sample_duration (int): Duration of the sample in seconds.
     """
     # 1. Convert to WAV (if necessary)
+    working_file = input_file
     if not input_file.lower().endswith(".wav"):
         wav_file = os.path.join(output_folder, os.path.splitext(os.path.basename(input_file))[0] + ".wav")
         command = [
             "ffmpeg",
-            "-i",
-            input_file,
+            "-i", input_file,
+            "-c:a", "pcm_s16le",  # Ensure proper WAV format
             wav_file,
         ]
-        subprocess.run(command, capture_output=True)
-        print(f"Attempted conversion: {input_file} to {wav_file}")
-    input_file = wav_file  # Use the .wav file for subsequent processing
+        try:
+            subprocess.run(command, capture_output=True, check=True)
+            print(f"Converted: {input_file} to {wav_file}")
+            working_file = wav_file  # Use the .wav file for subsequent processing
+        except subprocess.CalledProcessError as e:
+            print(f"Error converting {input_file} to WAV: {e}")
+            print(f"ffmpeg output (stderr): {e.stderr.decode()}")
+            return  # Stop if conversion fails
+        except FileNotFoundError:
+            print("Error: ffmpeg command not found. Please ensure ffmpeg is installed and in your system's PATH.")
+            sys.exit(1)
 
-    # 2. Create the audio sample
-    sample_name = os.path.splitext(os.path.basename(input_file))[0] + f"_sample_{sample_duration}s.wav"
+    # 2. Create the audio sample using ffmpeg
+    sample_name = os.path.splitext(os.path.basename(working_file))[0] + f"_sample_{sample_duration}s.wav"
     output_file = os.path.join(output_folder, sample_name)
+    
+    # Format sample_duration as HH:MM:SS for ffmpeg
+    formatted_duration = f"00:00:{sample_duration:02d}"
+    
     command = [
-        "sox",
-        input_file,
-        output_file,
-        "trim",
-        "0",
-        f"{sample_duration}",
+        "ffmpeg",
+        "-i", working_file,       # Input file
+        "-ss", "00:00:00",        # Start from the beginning
+        "-t", formatted_duration, # Duration to cut
+        "-c:a", "pcm_s16le",      # Use WAV codec (PCM)
+        output_file               # Output file
     ]
+    
     try:
         subprocess.run(command, check=True, capture_output=True)
-        print(f"Created sample: {output_file} from {input_file}")
+        print(f"Created sample: {output_file} from {working_file}")
     except subprocess.CalledProcessError as e:
         print(f"Error creating sample from {input_file}: {e}")
-        print(f"SoX output (stderr): {e.stderr.decode()}")
+        print(f"ffmpeg output (stderr): {e.stderr.decode()}")
         return  # Stop if sample creation fails
     except FileNotFoundError:
-        print("Error: sox command not found.  Please ensure sox is installed and in your system's PATH.")
+        print("Error: ffmpeg command not found. Please ensure ffmpeg is installed and in your system's PATH.")
         sys.exit(1)
 
     # 3. Calculate fingerprints
