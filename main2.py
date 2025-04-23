@@ -237,17 +237,9 @@ def process_audio_file(db_path, input_file, output_folder, sample_duration=10):
             input_file,
             wav_file,
         ]
-        try:
-            subprocess.run(command, check=True, capture_output=True)
-            print(f"Converted: {input_file} to {wav_file}")
-        except subprocess.CalledProcessError as e:
-            print(f"Error converting {input_file}: {e}")
-            print(f"FFmpeg output (stderr): {e.stderr.decode()}")
-            return  # Stop processing if conversion fails
-        except FileNotFoundError:
-            print("Error: ffmpeg command not found.  Please ensure ffmpeg is installed and in your system's PATH.")
-            sys.exit(1)
-        input_file = wav_file  # Use the .wav file for subsequent processing
+        subprocess.run(command, capture_output=True)
+        print(f"Attempted conversion: {input_file} to {wav_file}")
+    input_file = wav_file  # Use the .wav file for subsequent processing
 
     # 2. Create the audio sample
     sample_name = os.path.splitext(os.path.basename(input_file))[0] + f"_sample_{sample_duration}s.wav"
