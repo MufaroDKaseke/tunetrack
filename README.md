@@ -42,3 +42,12 @@ sudo apt upgrade
 sudo apt install ffmpeg chromaprint sqlite3
 ```
 
+
+
+## New Plan
+
+Convert everything to .wav
+Use a package named sox to create the sample or samples
+Create hashes, truncate the full song hash to same length as the sample hash
+Compare and tell us your score
+

@@ -1,0 +1,5 @@
+pyacoustid
+chromaprint
+numpy
+audioread
+pydub
